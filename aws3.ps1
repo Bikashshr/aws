@@ -1,40 +1,55 @@
-# AWS SSO Login Script for Multiple Orgs
-# Save as: Login-AWSSSO-MultiOrg.ps1
+# AWS SSO Login Script with Predefined Orgs/Accounts/Roles
+# Save as: Login-AWSSSO-Quick.ps1
 
 # --- CONFIGURATION ---
-$orgs = @(
-    @{ Name = "Org-A"; StartUrl = "https://orgA.awsapps.com/start"; Region = "us-east-1" },
-    @{ Name = "Org-B"; StartUrl = "https://orgB.awsapps.com/start"; Region = "us-west-2" },
-    @{ Name = "Org-C"; StartUrl = "https://orgC.awsapps.com/start"; Region = "eu-central-1" }
+$profiles = @(
+    @{
+        Name      = "Dev-OrgA"
+        StartUrl  = "https://orgA.awsapps.com/start"
+        Region    = "us-east-1"
+        AccountId = "111111111111"
+        RoleName  = "DevOpsAdmin"
+    },
+    @{
+        Name      = "Prod-OrgB"
+        StartUrl  = "https://orgB.awsapps.com/start"
+        Region    = "us-west-2"
+        AccountId = "222222222222"
+        RoleName  = "ProdReadOnly"
+    },
+    @{
+        Name      = "Shared-OrgC"
+        StartUrl  = "https://orgC.awsapps.com/start"
+        Region    = "eu-central-1"
+        AccountId = "333333333333"
+        RoleName  = "NetworkAdmin"
+    }
 )
 
-# --- Select Org ---
-$orgChoice = $orgs | Out-GridView -Title "Select Organization" -PassThru
-if (-not $orgChoice) { Write-Host "No org selected. Exiting."; exit }
+# --- Select Profile ---
+$profileChoice = $profiles | Out-GridView -Title "Select Profile" -PassThru
+if (-not $profileChoice) { Write-Host "No profile selected. Exiting."; exit }
 
-$SSOStartUrl = $orgChoice.StartUrl
-$SSORegion   = $orgChoice.Region
+$SSOStartUrl = $profileChoice.StartUrl
+$SSORegion   = $profileChoice.Region
+$AccountId   = $profileChoice.AccountId
+$RoleName    = $profileChoice.RoleName
 
-Write-Host "Logging into $($orgChoice.Name)..."
+Write-Host "Logging into $($profileChoice.Name)..."
 
-# Login
+# Login (will only open browser if token is expired)
 aws sso login --sso-start-url $SSOStartUrl --sso-region $SSORegion
 
-# Fetch accounts
-$accounts = aws sso list-accounts --region $SSORegion | ConvertFrom-Json
-$accountChoice = $accounts.accountList | Out-GridView -Title "Select AWS Account" -PassThru
-
-# Fetch roles
-$roles = aws sso list-account-roles --account-id $accountChoice.accountId --region $SSORegion | ConvertFrom-Json
-$roleChoice = $roles.roleList | Out-GridView -Title "Select Role for $($accountChoice.accountName)" -PassThru
-
 # Get credentials
-$creds = aws sso get-role-credentials --account-id $accountChoice.accountId --role-name $roleChoice.roleName --region $SSORegion | ConvertFrom-Json
+$creds = aws sso get-role-credentials `
+    --account-id $AccountId `
+    --role-name $RoleName `
+    --region $SSORegion | ConvertFrom-Json
 
-# Export to env vars
+# Export credentials into current PowerShell session
 $env:AWS_ACCESS_KEY_ID     = $creds.roleCredentials.accessKeyId
 $env:AWS_SECRET_ACCESS_KEY = $creds.roleCredentials.secretAccessKey
 $env:AWS_SESSION_TOKEN     = $creds.roleCredentials.sessionToken
 
-Write-Host "`nLogged in to $($orgChoice.Name) → Account $($accountChoice.accountName) → Role $($roleChoice.roleName)"
+Write-Host "`n✅ Logged in as $($RoleName) in account $($AccountId) ($($profileChoice.Name))"
 
